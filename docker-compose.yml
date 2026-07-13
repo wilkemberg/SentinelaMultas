@@ -1,0 +1,56 @@
+name: sentinela-multa
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: sentinela-multa-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: sentinela
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend/Sentinela.Api
+      dockerfile: Dockerfile
+    container_name: sentinela-multa-backend
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=sentinela;Username=postgres;Password=mysecretpassword
+      - Jwt__SecretKey=${JWT_SECRET_KEY:-ChangeThisToSomethingVerySecureAndLongEnough}
+      - Jwt__Issuer=SentinelaApp
+      - Jwt__Audience=SentinelaUsers
+      - Frontend__Origem=http://localhost:3000
+      - Infosimples__Token=${INFOSIMPLES_TOKEN:-}
+      - Anthropic__ApiKey=${ANTHROPIC_API_KEY:-}
+      - Anthropic__Model=${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      - Resend__ApiKey=${RESEND_API_KEY:-}
+      - Resend__RemetentePadrao=${RESEND_REMETENTE:-Sentinela <alertas@sentinela.app>}
+      - ZApi__InstanceId=${ZAPI_INSTANCE_ID:-}
+      - ZApi__Token=${ZAPI_TOKEN:-}
+    ports:
+      - "5000:8080"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend/sentinela-web
+      dockerfile: Dockerfile
+    container_name: sentinela-multa-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
