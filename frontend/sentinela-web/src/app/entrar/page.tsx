@@ -26,7 +26,7 @@ const InputBase = ({ label, id, type = "text", value, onChange, placeholder }: a
 export default function EntrarPage() {
   const router = useRouter();
   const [modo, setModo] = useState<"login" | "registro">("login");
-  const [form, setForm] = useState({ nome: "", email: "", senha: "" });
+  const [form, setForm] = useState({ nome: "", email: "", senha: "", whatsapp: "" });
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -35,11 +35,17 @@ export default function EntrarPage() {
     setLoading(true);
     setErro("");
 
+    if (modo === "registro" && form.whatsapp.replace(/\D/g, "").length < 10) {
+      setErro("Informe um WhatsApp válido (DDD + número) — é por onde você recebe os alertas de multa.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const resp =
         modo === "login"
           ? await apiAuth.entrar(form.email, form.senha)
-          : await apiAuth.registrar(form.nome, form.email, form.senha);
+          : await apiAuth.registrar(form.nome, form.email, form.senha, form.whatsapp.replace(/\D/g, ""));
 
       auth.salvarSessao(resp);
       router.push("/dashboard");
@@ -88,13 +94,21 @@ export default function EntrarPage() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {modo === "registro" && (
-              <div className="animate-fade-in">
+              <div className="animate-fade-in space-y-5">
                 <InputBase
                   label="Nome completo"
                   id="nome"
                   value={form.nome}
                   onChange={(e: any) => setForm({ ...form, nome: e.target.value })}
                   placeholder="Seu nome"
+                />
+                <InputBase
+                  label="Celular / WhatsApp"
+                  id="whatsapp"
+                  type="tel"
+                  value={form.whatsapp}
+                  onChange={(e: any) => setForm({ ...form, whatsapp: e.target.value.replace(/\D/g, "").slice(0, 13) })}
+                  placeholder="Ex: 21999999999 (DDD + número)"
                 />
               </div>
             )}

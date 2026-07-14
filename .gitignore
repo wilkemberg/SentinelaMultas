@@ -2,11 +2,13 @@
 backend/**/bin/
 backend/**/obj/
 backend/**/appsettings.Development.json
+backend/**/.vs/
 
 # Node / Next.js
 frontend/**/node_modules/
 frontend/**/.next/
 frontend/**/out/
+frontend/**/*.tsbuildinfo
 
 # Env
 .env

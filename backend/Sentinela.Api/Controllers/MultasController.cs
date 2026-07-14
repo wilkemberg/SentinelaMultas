@@ -53,6 +53,7 @@ public class MultasController : ControllerBase
                 m.LocalInfracao,
                 m.AutuacaoPdfUrl,
                 m.BoletoPdfUrl,
+                m.FontesConfirmacao,
                 m.DetectadaEm,
                 m.AnalisadaEm,
                 PlacaVeiculo = m.Veiculo!.Placa,

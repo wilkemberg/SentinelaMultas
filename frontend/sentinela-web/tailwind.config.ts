@@ -64,6 +64,7 @@ const config: Config = {
         "fade-in": "fadeIn 0.25s ease forwards",
         "scale-in": "scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         "blob-float": "blobFloat 14s ease-in-out infinite",
+        "welcome-card-in": "welcomeCardIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards",
       },
       keyframes: {
         pulseRing: {
@@ -119,6 +120,11 @@ const config: Config = {
           "0%, 100%": { transform: "translate(0, 0) scale(1)" },
           "33%": { transform: "translate(30px, -20px) scale(1.08)" },
           "66%": { transform: "translate(-20px, 25px) scale(0.95)" },
+        },
+        welcomeCardIn: {
+          "0%": { opacity: "0", transform: "translateY(40px) scale(0.85) rotate(-6deg)" },
+          "60%": { opacity: "1", transform: "translateY(-6px) scale(1.02) rotate(1deg)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1) rotate(0deg)" },
         },
       },
     },

@@ -7,7 +7,7 @@ using Sentinela.Api.Services;
 
 namespace Sentinela.Api.Controllers;
 
-public record CriarVeiculoRequest(string Placa, string Renavam, string Uf = "RJ");
+public record CriarVeiculoRequest(string Placa, string Renavam, string Uf = "RJ", string? CpfProprietario = null, string? Tipo = null);
 
 [ApiController]
 [Route("api/veiculos")]
@@ -16,6 +16,7 @@ public class VeiculosController : ControllerBase
 {
     private readonly SentinelaDbContext _db;
     private readonly IConsultaMultasService _consultaService;
+    private readonly IConsultaMultasDetranRjService _consultaDetranRjService;
     private readonly ICtbAnaliseService _analiseService;
     private readonly INotificacaoService _notificacaoService;
     private readonly ILogger<VeiculosController> _logger;
@@ -23,12 +24,14 @@ public class VeiculosController : ControllerBase
     public VeiculosController(
         SentinelaDbContext db,
         IConsultaMultasService consultaService,
+        IConsultaMultasDetranRjService consultaDetranRjService,
         ICtbAnaliseService analiseService,
         INotificacaoService notificacaoService,
         ILogger<VeiculosController> logger)
     {
         _db = db;
         _consultaService = consultaService;
+        _consultaDetranRjService = consultaDetranRjService;
         _analiseService = analiseService;
         _notificacaoService = notificacaoService;
         _logger = logger;
@@ -48,6 +51,7 @@ public class VeiculosController : ControllerBase
                 v.Placa,
                 v.Renavam,
                 v.Uf,
+                v.Tipo,
                 v.MonitoramentoAtivo,
                 v.UltimaVerificacaoEm,
                 v.CriadoEm,
@@ -76,12 +80,30 @@ public class VeiculosController : ControllerBase
         if (jaExiste)
             return Conflict(new { mensagem = "Essa placa já está cadastrada na sua conta." });
 
+        // CPF é opcional: só faz sentido preencher quando o veículo NÃO está no
+        // nome do dono da conta (carro financiado, de terceiro, de empresa) —
+        // caso comum, o Sentinela usa o CPF já cadastrado no perfil (Usuario.Cpf).
+        var cpfLimpo = string.IsNullOrWhiteSpace(req.CpfProprietario)
+            ? null
+            : new string(req.CpfProprietario.Where(char.IsDigit).ToArray());
+
+        if (!string.IsNullOrEmpty(cpfLimpo) && cpfLimpo.Length != 11)
+            return BadRequest(new { mensagem = "CPF do proprietário inválido. Deve ter 11 dígitos, ou deixe em branco para usar o CPF do seu perfil." });
+
+        // Tipo (Carro/Moto) é só um detalhe de exibição — qualquer valor não
+        // reconhecido cai em Carro, nunca bloqueia o cadastro por causa disso.
+        var tipo = Enum.TryParse<TipoVeiculo>(req.Tipo, ignoreCase: true, out var tipoParsed)
+            ? tipoParsed
+            : TipoVeiculo.Carro;
+
         var veiculo = new Veiculo
         {
             UsuarioId = usuarioId,
             Placa = req.Placa.ToUpperInvariant().Trim(),
             Renavam = req.Renavam.Trim(),
-            Uf = req.Uf.ToUpperInvariant()
+            Uf = req.Uf.ToUpperInvariant(),
+            CpfProprietario = cpfLimpo,
+            Tipo = tipo
         };
 
         _db.Veiculos.Add(veiculo);
@@ -93,6 +115,8 @@ public class VeiculosController : ControllerBase
             veiculo.Placa,
             veiculo.Renavam,
             veiculo.Uf,
+            veiculo.Tipo,
+            veiculo.CpfProprietario,
             veiculo.MonitoramentoAtivo,
             veiculo.CriadoEm
         });
@@ -123,11 +147,11 @@ public class VeiculosController : ControllerBase
     }
 
     /// <summary>
-    /// Consulta agora (não espera o job das 07:00). Útil logo após o cadastro.
+    /// Consulta agora (não espera o job das 10:00). Útil logo após o cadastro.
     /// Retorna as multas novas encontradas nesta verificação.
     /// </summary>
     [HttpPost("{id:guid}/verificar-agora")]
-    public async Task<IActionResult> VerificarAgora(Guid id)
+    public async Task<IActionResult> VerificarAgora(Guid id, CancellationToken ct)
     {
         var usuarioId = User.GetUsuarioId();
         var veiculo = await _db.Veiculos
@@ -140,18 +164,29 @@ public class VeiculosController : ControllerBase
         try
         {
             var resultado = await _consultaService.ConsultarAsync(veiculo.Placa, veiculo.Renavam, veiculo.Uf);
-
             if (!resultado.Sucesso)
-                return StatusCode(502, new { mensagem = $"Falha ao consultar órgãos: {resultado.MensagemErro}" });
+                _logger.LogWarning("SERPRO/RADAR falhou para {Placa}, tentando seguir só com DETRAN-RJ: {Erro}", veiculo.Placa, resultado.MensagemErro);
+
+            // Segunda fonte (DETRAN-RJ) — complementa o SERPRO/RADAR, que só reflete
+            // o RENAINF (base nacional) depois que o órgão autuador conclui seu
+            // próprio trâmite interno. IMPORTANTE: essa consulta roda mesmo que o
+            // SERPRO/RADAR tenha falhado acima — é justamente o cenário real que
+            // motivou essa segunda fonte existir (multa já visível no DETRAN-RJ,
+            // mas o SERPRO/RADAR não retorna nada para aquela placa/renavam).
+            // Abortar aqui em cima teria travado a verificação antes de sequer
+            // tentar a fonte que, na prática, era a única com a multa.
+            var cpfParaDetranRj = veiculo.CpfProprietario ?? veiculo.Usuario.Cpf ?? "";
+            var resultadoDetranRj = await _consultaDetranRjService.ConsultarAsync(cpfParaDetranRj, veiculo.Renavam);
+            if (!resultadoDetranRj.Sucesso)
+                _logger.LogWarning("DETRAN-RJ Nada Consta falhou para {Placa}, seguindo só com SERPRO/RADAR: {Erro}", veiculo.Placa, resultadoDetranRj.MensagemErro);
+
+            // Só falha de verdade se AS DUAS fontes falharam — se pelo menos uma
+            // respondeu (mesmo que com zero multas), a verificação é válida.
+            if (!resultado.Sucesso && !resultadoDetranRj.Sucesso)
+                return StatusCode(502, new { mensagem = $"Falha ao consultar as duas fontes de multas. SERPRO/RADAR: {resultado.MensagemErro} | DETRAN-RJ: {resultadoDetranRj.MensagemErro}" });
 
             var multasPorNumero = veiculo.Multas.ToDictionary(m => m.NumeroAutoInfracao);
-            var encontradasDeduplicadas = resultado.Multas
-                // Defesa extra contra duplicidade (além da que já acontece dentro
-                // do serviço de consulta) — evita violar o índice único
-                // (VeiculoId, NumeroAutoInfracao) do banco.
-                .GroupBy(m => m.NumeroAutoInfracao)
-                .Select(g => g.First())
-                .ToList();
+            var encontradasDeduplicadas = MultasMerge.Combinar(resultado.Multas, resultadoDetranRj.Multas);
 
             var novas = encontradasDeduplicadas
                 .Where(m => !multasPorNumero.ContainsKey(m.NumeroAutoInfracao))
@@ -184,11 +219,26 @@ public class VeiculosController : ControllerBase
                     Municipio = encontrada.Municipio,
                     AutuacaoPdfUrl = encontrada.AutuacaoPdfUrl,
                     BoletoPdfUrl = encontrada.BoletoPdfUrl,
+                    FontesConfirmacao = encontrada.Fonte,
                     AnalisadaEm = DateTime.UtcNow
                 };
 
+                // Campos extras do record estendido (se disponíveis) — mesma
+                // lógica do job diário, faltava aqui na verificação manual.
+                if (analise is AnaliseCtbCompleta completa)
+                {
+                    multa.ChanceRecursoPercent = completa.ChanceRecursoPercent;
+                    multa.OndeRecorrer = completa.OndeRecorrer;
+                    multa.OndeObterDesconto = completa.OndeObterDesconto;
+                }
+
                 _db.Multas.Add(multa);
                 multasCriadas.Add(multa);
+
+                // Notifica (e-mail com PDF anexo da multa + WhatsApp, se
+                // habilitados) já na verificação manual — antes só o job diário
+                // das 10:00 avisava; "Verificar agora" só atualizava a tela.
+                await _notificacaoService.NotificarMultaEncontradaAsync(veiculo.Usuario, veiculo, multa, analise, ct);
             }
 
             // Reconcilia multas já existentes cujos dados ficaram incompletos
@@ -200,6 +250,18 @@ public class VeiculosController : ControllerBase
             {
                 if (!multasPorNumero.TryGetValue(encontrada.NumeroAutoInfracao, out var existente))
                     continue;
+
+                // Sempre atualiza quais fontes confirmaram esta multa — operação
+                // barata (sem IA), independente de mais algum outro campo ter
+                // mudado. Ex.: uma multa vista antes só no DETRAN-RJ pode passar a
+                // aparecer também no SERPRO/RADAR num ciclo seguinte.
+                var fontesAtualizadas = MultasMerge.CombinarFontes(existente.FontesConfirmacao, encontrada.Fonte);
+                if (fontesAtualizadas != existente.FontesConfirmacao)
+                {
+                    existente.FontesConfirmacao = fontesAtualizadas;
+                    if (!multasAtualizadas.Contains(existente))
+                        multasAtualizadas.Add(existente);
+                }
 
                 var precisaAtualizar =
                     existente.Valor <= 0 ||
@@ -224,16 +286,22 @@ public class VeiculosController : ControllerBase
                 if (string.IsNullOrWhiteSpace(existente.AnaliseIa))
                     existente.AnaliseIa = analise.ExplicacaoSimples;
 
-                multasAtualizadas.Add(existente);
+                if (!multasAtualizadas.Contains(existente))
+                    multasAtualizadas.Add(existente);
             }
 
             veiculo.UltimaVerificacaoEm = DateTime.UtcNow;
             await _db.SaveChangesAsync();
 
+            // Mesma notificação de "tudo certo" que o job diário manda quando
+            // não há multa nova — mantém consistência entre os dois caminhos.
+            if (multasCriadas.Count == 0)
+                await _notificacaoService.NotificarSemMultasAsync(veiculo.Usuario, veiculo, ct);
+
             return Ok(new
             {
                 PlacaVerificada = veiculo.Placa,
-                TotalMultasEncontradas = resultado.Multas.Count,
+                TotalMultasEncontradas = encontradasDeduplicadas.Count,
                 MultasNovas = multasCriadas.Count,
                 MultasAtualizadas = multasAtualizadas.Count,
                 Ids = multasCriadas.Select(m => m.Id)

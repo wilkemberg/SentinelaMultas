@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Veiculo, apiVeiculos } from "@/lib/api";
 import Spotlight from "@/components/Spotlight";
-import { Trash2, ScanSearch, Pause, Play, Car, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { Trash2, ScanSearch, Pause, Play, Car, Bike, ShieldAlert, CheckCircle2 } from "lucide-react";
 
 interface Props {
   veiculo: Veiculo;
@@ -99,7 +99,8 @@ export default function VeiculoCard({ veiculo, onUpdate }: Props) {
 
       <div className="text-center mb-6">
         <p className="text-xs text-nevoa flex items-center justify-center gap-1.5">
-          <Car className="w-3.5 h-3.5" /> {veiculo.uf} · RENAVAM {veiculo.renavam}
+          {veiculo.tipo === "Moto" ? <Bike className="w-3.5 h-3.5" /> : <Car className="w-3.5 h-3.5" />}
+          {veiculo.uf} · RENAVAM {veiculo.renavam}
         </p>
       </div>
 

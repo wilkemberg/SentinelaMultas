@@ -18,12 +18,14 @@ public class NotificacaoService : INotificacaoService
 {
     private readonly HttpClient _http;
     private readonly IConfiguration _config;
+    private readonly IMultaPdfService _pdfService;
     private readonly ILogger<NotificacaoService> _logger;
 
-    public NotificacaoService(HttpClient http, IConfiguration config, ILogger<NotificacaoService> logger)
+    public NotificacaoService(HttpClient http, IConfiguration config, IMultaPdfService pdfService, ILogger<NotificacaoService> logger)
     {
         _http = http;
         _config = config;
+        _pdfService = pdfService;
         _logger = logger;
     }
 
@@ -52,16 +54,42 @@ public class NotificacaoService : INotificacaoService
                 : "Recomendação: neste caso o recurso tem baixa chance de êxito.")
             .AppendLine($"Prazo estimado: {multa.PrazoDefesaPrevia:dd/MM/yyyy}")
             .AppendLine($"Como evitar de novo: {analise.ComoEvitarNoFuturo}")
+            .AppendLine()
+            .AppendLine("O detalhe completo desta multa está no PDF anexo.")
             .ToString();
 
         if (usuario.NotificarEmail)
-            await EnviarEmailAsync(usuario.Email, assunto, corpo, ct);
+        {
+            // Um PDF por multa (não agrupa várias multas num único arquivo) —
+            // gerado sob demanda aqui, na hora de notificar, com os mesmos dados
+            // já persistidos na Multa (inclui a análise da IA feita acima).
+            (string NomeArquivo, byte[] Conteudo)? anexo = null;
+            try
+            {
+                var nomeArquivo = $"multa-{SanitizarNomeArquivo(multa.NumeroAutoInfracao)}.pdf";
+                anexo = (nomeArquivo, _pdfService.Gerar(multa, veiculo));
+            }
+            catch (Exception ex)
+            {
+                // Falha ao gerar o PDF não deve impedir o e-mail de sair — o
+                // usuário ainda recebe o aviso da multa, só sem o anexo.
+                _logger.LogError(ex, "Falha ao gerar PDF da multa {NumeroAuto}, enviando e-mail sem anexo", multa.NumeroAutoInfracao);
+            }
+
+            await EnviarEmailAsync(usuario.Email, assunto, corpo, ct, anexo is null ? null : new[] { anexo.Value });
+        }
 
         if (usuario.NotificarWhatsApp && !string.IsNullOrWhiteSpace(usuario.WhatsAppNumero))
             await EnviarWhatsAppAsync(usuario.WhatsAppNumero!, corpo, ct);
     }
 
-    private async Task EnviarEmailAsync(string destinatario, string assunto, string corpo, CancellationToken ct)
+    private static string SanitizarNomeArquivo(string valor)
+    {
+        var limpo = new string(valor.Where(c => char.IsLetterOrDigit(c) || c == '-').ToArray());
+        return string.IsNullOrWhiteSpace(limpo) ? "multa" : limpo;
+    }
+
+    private async Task EnviarEmailAsync(string destinatario, string assunto, string corpo, CancellationToken ct, IReadOnlyList<(string NomeArquivo, byte[] Conteudo)>? anexos = null)
     {
         var apiKey = _config["Resend:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -70,13 +98,26 @@ public class NotificacaoService : INotificacaoService
             return;
         }
 
-        var payload = new
-        {
-            from = _config["Resend:RemetentePadrao"] ?? "Sentinela <alertas@sentinela.app>",
-            to = new[] { destinatario },
-            subject = assunto,
-            text = corpo
-        };
+        object payload = anexos is { Count: > 0 }
+            ? new
+            {
+                from = _config["Resend:RemetentePadrao"] ?? "Sentinela <alertas@sentinela.app>",
+                to = new[] { destinatario },
+                subject = assunto,
+                text = corpo,
+                attachments = anexos.Select(a => new
+                {
+                    filename = a.NomeArquivo,
+                    content = Convert.ToBase64String(a.Conteudo)
+                }).ToArray()
+            }
+            : new
+            {
+                from = _config["Resend:RemetentePadrao"] ?? "Sentinela <alertas@sentinela.app>",
+                to = new[] { destinatario },
+                subject = assunto,
+                text = corpo
+            };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
         request.Headers.Add("Authorization", $"Bearer {apiKey}");
@@ -84,7 +125,10 @@ public class NotificacaoService : INotificacaoService
 
         using var response = await _http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
-            _logger.LogError("Falha ao enviar e-mail: {Status}", response.StatusCode);
+        {
+            var corpoResposta = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogError("Falha ao enviar e-mail: {Status} {Corpo}", response.StatusCode, corpoResposta);
+        }
     }
 
     private async Task EnviarWhatsAppAsync(string numero, string mensagem, CancellationToken ct)

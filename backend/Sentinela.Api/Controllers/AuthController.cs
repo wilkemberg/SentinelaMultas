@@ -6,7 +6,7 @@ using Sentinela.Api.Services;
 
 namespace Sentinela.Api.Controllers;
 
-public record RegistrarRequest(string Nome, string Email, string Senha);
+public record RegistrarRequest(string Nome, string Email, string Senha, string? WhatsAppNumero = null);
 public record EntrarRequest(string Email, string Senha);
 public record AuthResponse(string Token, Guid UsuarioId, string Nome, string Email);
 
@@ -32,11 +32,19 @@ public class AuthController : ControllerBase
         if (await _db.Usuarios.AnyAsync(u => u.Email == req.Email.ToLower()))
             return Conflict(new { mensagem = "E-mail já cadastrado." });
 
+        // WhatsApp é obrigatório desde o cadastro — é o canal usado para os
+        // alertas de multa nova, e sem ele o usuário chegaria ao painel sem
+        // como receber notificação nenhuma até preencher depois.
+        var whatsAppLimpo = new string((req.WhatsAppNumero ?? "").Where(char.IsDigit).ToArray());
+        if (whatsAppLimpo.Length < 10)
+            return BadRequest(new { mensagem = "WhatsApp é obrigatório (DDD + número)." });
+
         var usuario = new Usuario
         {
             Nome = req.Nome.Trim(),
             Email = req.Email.ToLower().Trim(),
-            SenhaHash = _jwt.HashSenha(req.Senha)
+            SenhaHash = _jwt.HashSenha(req.Senha),
+            WhatsAppNumero = whatsAppLimpo
         };
 
         _db.Usuarios.Add(usuario);

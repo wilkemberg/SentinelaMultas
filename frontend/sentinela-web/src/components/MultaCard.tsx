@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Multa, StatusRecurso, apiMultas } from "@/lib/api";
 import { gerarDefesaLocal } from "@/lib/defesaTemplate";
 import Spotlight from "@/components/Spotlight";
-import { Scale, CheckCircle2, XCircle, FileWarning, Search, Landmark, CarFront, Navigation, ChevronDown, Activity, FileText, Check, ShieldAlert, ShieldCheck, Sparkles, FileImage, Receipt, ExternalLink, CalendarClock } from "lucide-react";
+import { Scale, CheckCircle2, XCircle, FileWarning, Search, Landmark, CarFront, Navigation, ChevronDown, Activity, FileText, Check, ShieldAlert, ShieldCheck, Sparkles, FileImage, Receipt, ExternalLink, CalendarClock, Radar } from "lucide-react";
 
 const GRAVIDADE_MAP: Record<string, { label: string; cor: string; bg: string }> = {
   Leve: { label: "Leve", cor: "#16A34A", bg: "rgba(22, 163, 74, 0.1)" },
@@ -48,6 +48,12 @@ export default function MultaCard({ multa, expanded = false, onUpdate }: Props) 
   const prazo = multa.diasParaPrazo;
   const vencida = prazo !== null && prazo !== undefined && prazo < 0;
   const prazoUrgente = !vencida && prazo !== null && prazo !== undefined && prazo <= 7;
+
+  // Quais fontes (SERPRO/RADAR, DETRAN-RJ) confirmaram esta multa nesta
+  // verificação. Multas antigas (antes desse campo existir) vêm sem essa
+  // informação — nesse caso simplesmente não mostramos o selo.
+  const fontes = (multa.fontesConfirmacao ?? "").split(",").map((f) => f.trim()).filter(Boolean);
+  const confirmadaEmDuasFontes = fontes.length >= 2;
 
   const formatData = (iso: string) => new Date(iso).toLocaleDateString("pt-BR");
 
@@ -158,6 +164,19 @@ export default function MultaCard({ multa, expanded = false, onUpdate }: Props) 
             <span className="flex items-center gap-1 rounded-full bg-vermelhoSinal/12 px-2.5 py-1 text-[11px] font-semibold text-vermelhoSinal">
               <ShieldAlert className="w-3 h-3" />
               {prazo}d restantes
+            </span>
+          )}
+          {fontes.length > 0 && (
+            <span
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                confirmadaEmDuasFontes
+                  ? "bg-verdeSinal/12 text-verdeSinal"
+                  : "bg-azulMercosul/10 text-azulMercosul"
+              }`}
+              title={`Encontrada em: ${fontes.join(", ")}`}
+            >
+              <Radar className="w-3 h-3" />
+              {confirmadaEmDuasFontes ? "Confirmada em 2 fontes" : `Só no ${fontes[0]}`}
             </span>
           )}
         </div>

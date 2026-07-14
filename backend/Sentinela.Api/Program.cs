@@ -7,6 +7,11 @@ using Sentinela.Api.BackgroundJobs;
 using Sentinela.Api.Data;
 using Sentinela.Api.Services;
 
+// Licença Community do QuestPDF (gerador de PDF das multas anexadas por
+// e-mail) — gratuita para indivíduos/empresas com faturamento anual abaixo de
+// US$1M. Precisa ser definida uma vez, antes de qualquer geração de PDF.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // --- Banco de dados ---
@@ -43,6 +48,10 @@ builder.Services.AddAuthorization();
 // isso, o HttpClient cancelava a chamada antes da Infosimples terminar,
 // fazendo a consulta "sumir" sem erro nem resultado.
 builder.Services.AddHttpClient<IConsultaMultasService, SerproRadarConsultaService>(c => c.Timeout = TimeSpan.FromSeconds(320));
+// Segunda fonte de multas (DETRAN-RJ/Nada-Consta) — complementa o SERPRO/RADAR
+// fechando o intervalo entre a infração acontecer e ela chegar à base nacional
+// RENAINF (ver comentário em DetranRjNadaConstaService.cs).
+builder.Services.AddHttpClient<IConsultaMultasDetranRjService, DetranRjNadaConstaService>(c => c.Timeout = TimeSpan.FromSeconds(320));
 builder.Services.AddHttpClient<ICtbAnaliseService, AnthropicCtbAnaliseService>();
 builder.Services.AddHttpClient<INotificacaoService, NotificacaoService>();
 // Mesmo motivo do SERPRO/RADAR acima: a validação de CNH também é uma
@@ -51,6 +60,9 @@ builder.Services.AddHttpClient<INotificacaoService, NotificacaoService>();
 builder.Services.AddHttpClient<ICnhValidacaoService, SenatranValidarCnhService>(c => c.Timeout = TimeSpan.FromSeconds(320));
 builder.Services.AddSingleton<ICtbBaseConhecimentoService, RichCtbBaseConhecimentoService>();
 builder.Services.AddSingleton<IJwtService, JwtService>();
+// Gera o PDF de detalhe anexado ao e-mail de "multa nova encontrada" — sem
+// estado, então Singleton é seguro.
+builder.Services.AddSingleton<IMultaPdfService, MultaPdfService>();
 
 // --- Job diário de monitoramento ---
 builder.Services.AddHostedService<MonitoramentoDiarioJob>();

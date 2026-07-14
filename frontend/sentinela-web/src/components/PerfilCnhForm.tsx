@@ -23,8 +23,6 @@ export default function PerfilCnhForm({ perfil, onUpdate }: Props) {
   const [editando, setEditando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [form, setForm] = useState({
-    nome: perfil.nome ?? "",
-    cpf: perfil.cpf ?? "",
     numeroRegistroCnh: perfil.numeroRegistroCnh ?? "",
     categoriaCnh: perfil.categoriaCnh ?? "",
     dataNascimento: isoParaInputDate(perfil.dataNascimento),
@@ -36,8 +34,6 @@ export default function PerfilCnhForm({ perfil, onUpdate }: Props) {
     setSalvando(true);
     try {
       await apiUsuarios.atualizar({
-        nome: form.nome,
-        cpf: form.cpf,
         numeroRegistroCnh: form.numeroRegistroCnh,
         categoriaCnh: form.categoriaCnh,
         dataNascimento: form.dataNascimento || undefined,
@@ -60,39 +56,21 @@ export default function PerfilCnhForm({ perfil, onUpdate }: Props) {
         className="w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-borda bg-surface px-5 py-3 text-sm font-semibold text-texto hover:border-verdeSinal/50 hover:text-verdeSinal transition-all"
       >
         <Pencil className="w-4 h-4" />
-        {perfil.cpf ? "Editar meus dados" : "Preencher meus dados da CNH"}
+        {perfil.numeroRegistroCnh ? "Editar dados da CNH" : "Preencher dados da CNH"}
       </button>
     );
   }
 
   return (
     <div className="rounded-2xl glass-panel border border-borda p-6 space-y-5">
-      <h3 className="font-display text-lg font-bold text-texto">Seus dados</h3>
+      <h3 className="font-display text-lg font-bold text-texto">Dados da CNH</h3>
       <p className="text-sm text-texto/60 -mt-3">
         Usados só para montar seu cartão de identificação dentro do app e estimar o vencimento da
-        CNH. Nada disso é enviado a nenhum órgão.
+        CNH. Nada disso é enviado a nenhum órgão. Nome e CPF ficam na aba{" "}
+        <span className="font-semibold text-texto">Minha Conta</span>.
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="sm:col-span-2">
-          <label className={labelClasses}>Nome completo</label>
-          <input
-            className={campoClasses}
-            value={form.nome}
-            onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            placeholder="Seu nome como consta na CNH"
-          />
-        </div>
-        <div>
-          <label className={labelClasses}>CPF</label>
-          <input
-            className={campoClasses}
-            value={form.cpf}
-            onChange={(e) => setForm({ ...form, cpf: e.target.value })}
-            placeholder="Somente números"
-            maxLength={11}
-          />
-        </div>
         <div>
           <label className={labelClasses}>Categoria</label>
           <input

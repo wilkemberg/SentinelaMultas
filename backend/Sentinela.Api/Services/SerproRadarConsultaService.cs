@@ -90,6 +90,23 @@ public class SerproRadarConsultaService : IConsultaMultasService
                     foreach (var e in errorsEl.EnumerateArray())
                         if (e.GetString() is { } s) erros.Add(s);
 
+                // A Infosimples usa um código de "erro" (ex.: 612) até para o caso
+                // mais comum de todos: placa sem nenhuma infração no RENAINF. Isso
+                // NÃO é uma falha de consulta — é um resultado válido (zero multas).
+                // Sem esse tratamento, uma placa "limpa" no RADAR derrubava a
+                // verificação inteira com 502 antes mesmo de tentar o DETRAN-RJ (a
+                // segunda fonte), que é justamente o cenário real que motivou essa
+                // segunda fonte existir (multa já visível no DETRAN-RJ mas ainda
+                // não sincronizada com o RENAINF nacional).
+                var semResultados = erros.Any(e => e.Contains("Não existem infrações", StringComparison.OrdinalIgnoreCase))
+                    || (codeMessage?.Contains("não retornou dados", StringComparison.OrdinalIgnoreCase) ?? false);
+
+                if (semResultados)
+                {
+                    logger.LogInformation("SERPRO Radar {Placa}: nenhuma infração no RENAINF (code={Code})", placa, code);
+                    return new ResultadoConsulta(true, null, Array.Empty<MultaEncontrada>());
+                }
+
                 var mensagem = $"Infosimples code={code} ({codeMessage})" + (erros.Count > 0 ? ": " + string.Join("; ", erros) : "");
                 logger.LogWarning("SERPRO Radar sem sucesso para {Placa}: {Mensagem}", placa, mensagem);
                 return new ResultadoConsulta(false, mensagem, Array.Empty<MultaEncontrada>());
@@ -175,7 +192,8 @@ public class SerproRadarConsultaService : IConsultaMultasService
                     Local: GetStr(inf, "local", "logradouro"),
                     Municipio: GetStr(inf, "municipio", "cidade"),
                     AutuacaoPdfUrl: NullIfEmpty(GetStr(inf, "autuacao_pdf_url")),
-                    BoletoPdfUrl: NullIfEmpty(GetStr(inf, "boleto_pdf_url"))
+                    BoletoPdfUrl: NullIfEmpty(GetStr(inf, "boleto_pdf_url")),
+                    Fonte: "SERPRO/RADAR"
                 ));
             }
 

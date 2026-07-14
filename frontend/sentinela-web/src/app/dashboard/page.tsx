@@ -10,6 +10,9 @@ import AdicionarVeiculoModal from "@/components/AdicionarVeiculoModal";
 import CarteiraCnhCard from "@/components/CarteiraCnhCard";
 import CnhDocumentVisual from "@/components/CnhDocumentVisual";
 import PerfilCnhForm from "@/components/PerfilCnhForm";
+import MinhaContaForm from "@/components/MinhaContaForm";
+import OnboardingBoasVindasModal from "@/components/OnboardingBoasVindasModal";
+import TourAppModal from "@/components/TourAppModal";
 import ValidarCnhCard from "@/components/ValidarCnhCard";
 import Spotlight from "@/components/Spotlight";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -101,13 +104,16 @@ const NAV_ITEMS = [
   { id: "notificacoes", label: "Notificações", icon: Bell },
 ] as const;
 
-type AbaId = (typeof NAV_ITEMS)[number]["id"];
+// "conta" não aparece na lista de navegação principal — só é acessada
+// clicando no avatar/nome no rodapé da sidebar (ver SidebarContent abaixo).
+type AbaId = (typeof NAV_ITEMS)[number]["id"] | "conta";
 
 const PAGE_TITLES: Record<string, string> = {
   resumo: "Visão geral",
   veiculos: "Frota cadastrada",
   multas: "Histórico de infrações",
   cnh: "Minha CNH",
+  conta: "Minha conta",
   notificacoes: "Central de notificações",
 };
 
@@ -198,22 +204,33 @@ function SidebarContent({
       </nav>
 
       <div className={`py-4 border-t border-borda space-y-3 transition-all duration-300 ${colapsada ? "px-2" : "px-3"}`}>
-        <div className={`flex items-center rounded-xl py-2 transition-all ${colapsada ? "justify-center px-0" : "gap-3 px-2.5"}`}>
+        <button
+          onClick={() => {
+            setAbaAtiva("conta");
+            onNavigate?.();
+          }}
+          title={colapsada ? "Minha Conta" : undefined}
+          className={`w-full flex items-center rounded-xl py-2 transition-all hover:bg-verdeSinal/[0.06] ${
+            colapsada ? "justify-center px-0" : "gap-3 px-2.5"
+          }`}
+        >
           <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-azulMercosul/25 to-azulMercosul/5 text-azulMercosul font-display font-bold text-sm shrink-0 ring-2 ring-azulMercosul/20 ring-offset-2 ring-offset-transparent">
             {userNome?.[0]?.toUpperCase() ?? "U"}
           </div>
           {!colapsada && (
-            <>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold truncate">{userNome?.split(" ")[0] ?? "Operador"}</p>
-                <p className="text-[11px] text-verdeSinal flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-verdeSinal animate-pulse" /> Conectado
-                </p>
-              </div>
-              <ThemeToggle />
-            </>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="text-sm font-semibold truncate">{userNome?.split(" ")[0] ?? "Operador"}</p>
+              <p className="text-[11px] text-verdeSinal flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-verdeSinal animate-pulse" /> Conectado
+              </p>
+            </div>
           )}
-        </div>
+        </button>
+        {!colapsada && (
+          <div className="flex justify-end px-2.5">
+            <ThemeToggle />
+          </div>
+        )}
         <button
           onClick={onLogout}
           title={colapsada ? "Sair" : undefined}
@@ -414,6 +431,7 @@ export default function DashboardPage() {
   const [subAbaMultas, setSubAbaMultas] = useState<"novas" | "abertas" | "vencidas">("novas");
   const [busca, setBusca] = useState("");
   const [buscaFoco, setBuscaFoco] = useState(false);
+  const [mostrarTour, setMostrarTour] = useState(false);
   const user = auth.getUser();
 
   useEffect(() => {
@@ -447,6 +465,33 @@ export default function DashboardPage() {
   } = useSWR<PontuacaoCnh>(swrKeys.pontuacaoCnh, fetcher, { refreshInterval: 60_000 });
 
   const { data: perfil, mutate: mutatePerfil } = useSWR<PerfilUsuario>(swrKeys.perfil, fetcher);
+
+  // Onboarding obrigatório: sem Nome, CPF e Nº de registro da CNH, o
+  // Sentinela não consegue consultar o DETRAN-RJ nem montar o cartão de CNH.
+  // Aparece no primeiro acesso (perfil recém-criado, campos em branco) e
+  // continua aparecendo em qualquer login seguinte até serem preenchidos.
+  const precisaOnboarding =
+    !!perfil && (!perfil.nome?.trim() || !perfil.cpf || !perfil.numeroRegistroCnh);
+
+  // Mini tour de boas-vindas: dispara assim que o perfil está completo (seja
+  // porque acabou de terminar o onboarding, seja porque já era um usuário
+  // antigo que nunca viu o tour neste navegador/dispositivo). Guardado em
+  // localStorage por usuário — funciona igual na versão web e instalada
+  // como PWA, já que é o mesmo código rodando nos dois casos.
+  useEffect(() => {
+    if (!perfil || precisaOnboarding) return;
+    const chave = `sentinela_tour_visto_${perfil.id}`;
+    if (typeof window !== "undefined" && !window.localStorage.getItem(chave)) {
+      setMostrarTour(true);
+    }
+  }, [perfil, precisaOnboarding]);
+
+  const fecharTour = () => {
+    if (perfil && typeof window !== "undefined") {
+      window.localStorage.setItem(`sentinela_tour_visto_${perfil.id}`, "1");
+    }
+    setMostrarTour(false);
+  };
 
   const multas = multasFetch;
 
@@ -699,7 +744,7 @@ export default function DashboardPage() {
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-verdeSinal opacity-60" />
                         <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-verdeSinal" />
                       </span>
-                      Varredura diária ativa · próxima às 07:00
+                      Varredura diária ativa · próxima às 10:00
                     </span>
                   </div>
                 </div>
@@ -1031,6 +1076,16 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* ─── ABA MINHA CONTA ───────────────────────────────────────── */}
+            {abaAtiva === "conta" && (
+              <div className="animate-fade-up space-y-6">
+                <p className="text-sm text-nevoa -mt-2">
+                  Nome, CPF e WhatsApp — usados nas consultas de multas e nos alertas.
+                </p>
+                {perfil && <MinhaContaForm perfil={perfil} onUpdate={mutatePerfil} />}
+              </div>
+            )}
+
             {/* ─── ABA NOTIFICAÇÕES ──────────────────────────────────────── */}
             {abaAtiva === "notificacoes" && (
               <div className="animate-fade-up">
@@ -1175,6 +1230,22 @@ export default function DashboardPage() {
           }}
         />
       )}
+
+      {/* ── Onboarding de boas-vindas ─────────────────────────────────────
+          Some sozinho assim que Nome, CPF e Nº de registro da CNH estiverem
+          preenchidos (mutatePerfil() faz a checagem abaixo virar false). */}
+      {precisaOnboarding && perfil && (
+        <OnboardingBoasVindasModal
+          perfil={perfil}
+          onConcluido={() => {
+            mutatePerfil();
+            mutateVeiculos();
+          }}
+        />
+      )}
+
+      {/* ── Mini tour pós-onboarding ──────────────────────────────────────── */}
+      {mostrarTour && !precisaOnboarding && <TourAppModal nome={user?.nome} onFechar={fecharTour} />}
     </div>
   );
 }

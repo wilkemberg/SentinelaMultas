@@ -74,11 +74,15 @@ export interface PontuacaoCnh {
   multasConsideradas: MultaPontuacaoItem[];
 }
 
+export type TipoVeiculo = "Carro" | "Moto";
+
 export interface Veiculo {
   id: string;
   placa: string;
   renavam: string;
   uf: string;
+  tipo: TipoVeiculo;
+  cpfProprietario?: string | null;
   monitoramentoAtivo: boolean;
   ultimaVerificacaoEm: string | null;
   criadoEm: string;
@@ -111,6 +115,10 @@ export interface Multa {
   localInfracao: string | null;
   autuacaoPdfUrl?: string | null;
   boletoPdfUrl?: string | null;
+  // Fontes que confirmaram esta multa nesta verificação, separadas por vírgula
+  // (ex.: "DETRAN-RJ", "SERPRO/RADAR" ou "DETRAN-RJ,SERPRO/RADAR" quando bateu
+  // nas duas). Pode vir vazia em multas antigas, de antes desse campo existir.
+  fontesConfirmacao?: string;
   detectadaEm: string;
   analisadaEm: string | null;
   placaVeiculo?: string;
@@ -187,10 +195,10 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 // ─── Endpoints de Auth ────────────────────────────────────────────────────────
 
 export const apiAuth = {
-  async registrar(nome: string, email: string, senha: string): Promise<AuthResponse> {
+  async registrar(nome: string, email: string, senha: string, whatsAppNumero: string): Promise<AuthResponse> {
     return apiFetch("/api/auth/registrar", {
       method: "POST",
-      body: JSON.stringify({ nome, email, senha }),
+      body: JSON.stringify({ nome, email, senha, whatsAppNumero }),
     });
   },
   async entrar(email: string, senha: string): Promise<AuthResponse> {
@@ -239,10 +247,10 @@ export const apiVeiculos = {
   async listar(): Promise<Veiculo[]> {
     return apiFetch("/api/veiculos");
   },
-  async criar(placa: string, renavam: string, uf = "RJ"): Promise<Veiculo> {
+  async criar(placa: string, renavam: string, uf = "RJ", cpfProprietario?: string, tipo: TipoVeiculo = "Carro"): Promise<Veiculo> {
     return apiFetch("/api/veiculos", {
       method: "POST",
-      body: JSON.stringify({ placa, renavam, uf }),
+      body: JSON.stringify({ placa, renavam, uf, cpfProprietario: cpfProprietario || null, tipo }),
     });
   },
   async remover(id: string): Promise<void> {

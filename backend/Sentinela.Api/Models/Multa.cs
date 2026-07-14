@@ -62,6 +62,13 @@ public class Multa
     public string? AutuacaoPdfUrl { get; set; }
     public string? BoletoPdfUrl { get; set; }
 
+    // Quais fontes de consulta confirmaram esta multa nesta verificação (ex.:
+    // "DETRAN-RJ", "SERPRO/RADAR" ou "DETRAN-RJ,SERPRO/RADAR" quando as duas
+    // bateram). Usado na UI para mostrar o selo "confirmado em 2 fontes".
+    // Preenchido/atualizado em VeiculosController.VerificarAgora e
+    // MonitoramentoDiarioJob via MultasMerge.CombinarFontes.
+    public string FontesConfirmacao { get; set; } = string.Empty;
+
     public DateTime DetectadaEm { get; set; } = DateTime.UtcNow;
     public DateTime? AnalisadaEm { get; set; }
 }

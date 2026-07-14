@@ -87,12 +87,36 @@ public class UsuariosController : ControllerBase
         var usuario = await _db.Usuarios.FindAsync(usuarioId);
         if (usuario is null) return NotFound();
 
+        // Nome, CPF e WhatsApp são obrigatórios (ver aba "Minha Conta" no
+        // frontend): quando o campo é enviado explicitamente nesta chamada, não
+        // aceitamos deixá-lo em branco. Chamadas que não tocam nesses campos
+        // (ex.: só mudando categoria da CNH) continuam funcionando normalmente,
+        // sem precisar reenviar tudo.
+        if (req.Nome is not null && string.IsNullOrWhiteSpace(req.Nome))
+            return BadRequest(new { mensagem = "Nome é obrigatório." });
+
+        string? cpfLimpo = null;
+        if (req.Cpf is not null)
+        {
+            cpfLimpo = new string(req.Cpf.Where(char.IsDigit).ToArray());
+            if (cpfLimpo.Length != 11)
+                return BadRequest(new { mensagem = "CPF é obrigatório e deve ter 11 dígitos." });
+        }
+
+        string? whatsAppLimpo = null;
+        if (req.WhatsAppNumero is not null)
+        {
+            whatsAppLimpo = new string(req.WhatsAppNumero.Where(char.IsDigit).ToArray());
+            if (whatsAppLimpo.Length < 10)
+                return BadRequest(new { mensagem = "WhatsApp é obrigatório (DDD + número)." });
+        }
+
         if (req.Nome is not null) usuario.Nome = req.Nome.Trim();
-        if (req.WhatsAppNumero is not null) usuario.WhatsAppNumero = req.WhatsAppNumero;
+        if (whatsAppLimpo is not null) usuario.WhatsAppNumero = whatsAppLimpo;
         if (req.NotificarEmail.HasValue) usuario.NotificarEmail = req.NotificarEmail.Value;
         if (req.NotificarWhatsApp.HasValue) usuario.NotificarWhatsApp = req.NotificarWhatsApp.Value;
         if (req.AtividadeRemunerada.HasValue) usuario.AtividadeRemunerada = req.AtividadeRemunerada.Value;
-        if (req.Cpf is not null) usuario.Cpf = new string(req.Cpf.Where(char.IsDigit).ToArray());
+        if (cpfLimpo is not null) usuario.Cpf = cpfLimpo;
         if (req.NumeroRegistroCnh is not null) usuario.NumeroRegistroCnh = req.NumeroRegistroCnh.Trim();
         if (req.CategoriaCnh is not null) usuario.CategoriaCnh = req.CategoriaCnh.Trim().ToUpperInvariant();
         if (req.DataNascimento.HasValue) usuario.DataNascimento = req.DataNascimento.Value;

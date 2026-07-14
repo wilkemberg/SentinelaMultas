@@ -6,8 +6,9 @@ using Sentinela.Api.Services;
 namespace Sentinela.Api.BackgroundJobs;
 
 /// <summary>
-/// Roda 1x/dia às 07:00. Para cada veículo com monitoramento ativo:
-/// - Consulta DETRAN-RJ, CET-Rio e PRF em paralelo (via MultiOrgaoConsultaService)
+/// Roda 1x/dia às 10:00. Para cada veículo com monitoramento ativo:
+/// - Consulta SERPRO/RADAR (base nacional RENAINF) e DETRAN-RJ/Nada-Consta em
+///   sequência, mesclando os resultados (MultasMerge)
 /// - Cria registros de Multa para o que for novo
 /// - Manda para análise completa da IA (CTB + defesa)
 /// - Dispara notificação por e-mail e/ou WhatsApp
@@ -16,7 +17,7 @@ public class MonitoramentoDiarioJob : BackgroundService
 {
     private readonly IServiceProvider _services;
     private readonly ILogger<MonitoramentoDiarioJob> _logger;
-    private static readonly TimeSpan HorarioExecucao = new(7, 0, 0); // 07:00 diariamente
+    private static readonly TimeSpan HorarioExecucao = new(10, 0, 0); // 10:00 diariamente
 
     public MonitoramentoDiarioJob(IServiceProvider services, ILogger<MonitoramentoDiarioJob> logger)
     {
@@ -47,6 +48,7 @@ public class MonitoramentoDiarioJob : BackgroundService
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SentinelaDbContext>();
         var consultaService = scope.ServiceProvider.GetRequiredService<IConsultaMultasService>();
+        var consultaDetranRjService = scope.ServiceProvider.GetRequiredService<IConsultaMultasDetranRjService>();
         var analiseService = scope.ServiceProvider.GetRequiredService<ICtbAnaliseService>();
         var notificacaoService = scope.ServiceProvider.GetRequiredService<INotificacaoService>();
 
@@ -65,22 +67,31 @@ public class MonitoramentoDiarioJob : BackgroundService
 
             try
             {
-                // Consulta todos os órgãos em paralelo
+                // Consulta a fonte principal (SERPRO/RADAR — base nacional RENAINF)
                 var resultado = await consultaService.ConsultarAsync(veiculo.Placa, veiculo.Renavam, veiculo.Uf, ct);
-
                 if (!resultado.Sucesso)
+                    _logger.LogWarning("SERPRO/RADAR falhou para {Placa}, tentando seguir só com DETRAN-RJ: {Erro}", veiculo.Placa, resultado.MensagemErro);
+
+                // Segunda fonte (DETRAN-RJ) — pega multas que ainda não chegaram ao
+                // RENAINF por estarem em trâmite interno no órgão autuador. Roda
+                // mesmo que o SERPRO/RADAR tenha falhado acima: parar ali teria
+                // travado o veículo antes de tentar a fonte que, no caso real que
+                // motivou essa segunda consulta, era a única com a multa.
+                var cpfParaDetranRj = veiculo.CpfProprietario ?? veiculo.Usuario.Cpf ?? "";
+                var resultadoDetranRj = await consultaDetranRjService.ConsultarAsync(cpfParaDetranRj, veiculo.Renavam, ct);
+                if (!resultadoDetranRj.Sucesso)
+                    _logger.LogWarning("DETRAN-RJ Nada Consta falhou para {Placa}, seguindo só com SERPRO/RADAR: {Erro}", veiculo.Placa, resultadoDetranRj.MensagemErro);
+
+                // Só desiste do veículo se AS DUAS fontes falharam nesse ciclo.
+                if (!resultado.Sucesso && !resultadoDetranRj.Sucesso)
                 {
-                    _logger.LogError("Falha ao consultar {Placa}: {Erro}", veiculo.Placa, resultado.MensagemErro);
+                    _logger.LogError("Falha ao consultar as duas fontes para {Placa}. SERPRO/RADAR: {ErroSerpro} | DETRAN-RJ: {ErroDetran}",
+                        veiculo.Placa, resultado.MensagemErro, resultadoDetranRj.MensagemErro);
                     continue;
                 }
 
                 var multasPorNumero = veiculo.Multas.ToDictionary(m => m.NumeroAutoInfracao);
-                var encontradasDeduplicadas = resultado.Multas
-                    // Evita violar o índice único (VeiculoId, NumeroAutoInfracao) caso o
-                    // provedor de consulta liste a mesma infração mais de uma vez.
-                    .GroupBy(m => m.NumeroAutoInfracao)
-                    .Select(g => g.First())
-                    .ToList();
+                var encontradasDeduplicadas = MultasMerge.Combinar(resultado.Multas, resultadoDetranRj.Multas);
 
                 var novas = encontradasDeduplicadas
                     .Where(m => !multasPorNumero.ContainsKey(m.NumeroAutoInfracao))
@@ -93,6 +104,10 @@ public class MonitoramentoDiarioJob : BackgroundService
                 {
                     if (!multasPorNumero.TryGetValue(encontrada.NumeroAutoInfracao, out var existente))
                         continue;
+
+                    // Sempre atualiza as fontes que confirmaram esta multa, mesmo
+                    // quando nada mais precisa mudar (evita chamar a IA à toa).
+                    existente.FontesConfirmacao = MultasMerge.CombinarFontes(existente.FontesConfirmacao, encontrada.Fonte);
 
                     var precisaAtualizar =
                         existente.Valor <= 0 ||
@@ -161,6 +176,7 @@ public class MonitoramentoDiarioJob : BackgroundService
                             Municipio = encontrada.Municipio,
                             AutuacaoPdfUrl = encontrada.AutuacaoPdfUrl,
                             BoletoPdfUrl = encontrada.BoletoPdfUrl,
+                            FontesConfirmacao = encontrada.Fonte,
                             AnalisadaEm = DateTime.UtcNow,
                         };
 
