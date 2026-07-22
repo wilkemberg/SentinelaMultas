@@ -150,6 +150,15 @@ namespace Sentinela.Api.Migrations
                     b.Property<DateTime?>("CnhValidadaEm")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("ContaExcluida")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("ContaExcluidaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ConsentimentoLgpdEm")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Cpf")
                         .HasMaxLength(11)
                         .HasColumnType("character varying(11)");
@@ -167,6 +176,9 @@ namespace Sentinela.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
+
+                    b.Property<bool>("EmailVerificado")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Nome")
                         .IsRequired()
@@ -195,6 +207,18 @@ namespace Sentinela.Api.Migrations
                     b.Property<string>("SituacaoCnh")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<string>("TokenResetSenha")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("TokenResetSenhaExpiraEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenVerificacaoEmail")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("TokenVerificacaoEmailExpiraEm")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("UltimoLoginEm")
                         .HasColumnType("timestamp with time zone");

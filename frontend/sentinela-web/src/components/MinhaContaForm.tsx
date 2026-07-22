@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { PerfilUsuario, apiUsuarios } from "@/lib/api";
-import { Save, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { PerfilUsuario, apiUsuarios, apiAuth, auth } from "@/lib/api";
+import { Save, AlertCircle, CheckCircle2, MailWarning, Bell, Trash2, ShieldAlert } from "lucide-react";
 
 interface Props {
   perfil: PerfilUsuario;
@@ -17,11 +18,12 @@ const labelClasses = "block text-[11px] font-mono text-nevoa mb-1.5 uppercase tr
 const formatarWhatsApp = (v: string) => v.replace(/\D/g, "").slice(0, 13);
 const formatarCpf = (v: string) => v.replace(/\D/g, "").slice(0, 11);
 
-/// Nome, CPF e WhatsApp são obrigatórios: sem eles, a consulta ao DETRAN-RJ
-/// (que exige CPF do proprietário) fica sempre desativada silenciosamente, e
+/// Nome, CPF e WhatsApp são obrigatórios: sem eles, o cartão de CNH e a
+/// identificação do proprietário do veículo ficam sempre incompletos, e
 /// não há como notificar por WhatsApp. E-mail não é editável aqui — é o mesmo
 /// usado para login, definido no cadastro da conta.
 export default function MinhaContaForm({ perfil, onUpdate }: Props) {
+  const router = useRouter();
   const [form, setForm] = useState({
     nome: perfil.nome ?? "",
     cpf: perfil.cpf ?? "",
@@ -30,6 +32,59 @@ export default function MinhaContaForm({ perfil, onUpdate }: Props) {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState(false);
+
+  const [notificarEmail, setNotificarEmail] = useState(perfil.notificarEmail);
+  const [salvandoPreferencia, setSalvandoPreferencia] = useState(false);
+
+  const [reenviando, setReenviando] = useState(false);
+  const [verificacaoReenviada, setVerificacaoReenviada] = useState(false);
+
+  const [mostrarExclusao, setMostrarExclusao] = useState(false);
+  const [senhaExclusao, setSenhaExclusao] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExclusao, setErroExclusao] = useState("");
+
+  const alternarNotificarEmail = async (valor: boolean) => {
+    setNotificarEmail(valor);
+    setSalvandoPreferencia(true);
+    try {
+      await apiUsuarios.atualizar({ notificarEmail: valor });
+    } catch {
+      setNotificarEmail(!valor); // reverte se falhar
+    } finally {
+      setSalvandoPreferencia(false);
+    }
+  };
+
+  const reenviarVerificacao = async () => {
+    setReenviando(true);
+    try {
+      await apiAuth.reenviarVerificacao();
+      setVerificacaoReenviada(true);
+    } catch {
+      // silencioso — não é uma ação crítica o suficiente para travar a tela
+    } finally {
+      setReenviando(false);
+    }
+  };
+
+  const excluirConta = async () => {
+    if (!senhaExclusao) {
+      setErroExclusao("Informe sua senha para confirmar.");
+      return;
+    }
+    setExcluindo(true);
+    setErroExclusao("");
+    try {
+      await apiUsuarios.excluirConta(senhaExclusao);
+      auth.limparSessao();
+      router.push("/entrar");
+    } catch (e: any) {
+      setErroExclusao(e.message ?? "Não foi possível excluir a conta.");
+    } finally {
+      setExcluindo(false);
+    }
+  };
 
   const validar = (): string | null => {
     if (!form.nome.trim()) return "Nome é obrigatório.";
@@ -69,8 +124,8 @@ export default function MinhaContaForm({ perfil, onUpdate }: Props) {
       <div>
         <h3 className="font-display text-lg font-bold text-texto">Dados da conta</h3>
         <p className="text-sm text-texto/60 mt-1">
-          Nome, CPF e WhatsApp são obrigatórios — o CPF é usado nas consultas ao DETRAN-RJ (que exigem
-          CPF + RENAVAM do proprietário), e o WhatsApp é para onde vão os alertas de multa nova.
+          Nome, CPF e WhatsApp são obrigatórios — o CPF identifica o proprietário do veículo
+          monitorado, e o WhatsApp é para onde vão os alertas de multa nova.
         </p>
       </div>
 
@@ -121,6 +176,27 @@ export default function MinhaContaForm({ perfil, onUpdate }: Props) {
           <p className="text-[11px] text-nevoa mt-1.5">
             Fixo — é o e-mail usado para entrar na sua conta e receber as notificações.
           </p>
+
+          {!perfil.emailVerificado && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-ambarSinal/25 bg-ambarSinal/[0.06] px-4 py-3 text-xs text-ambarSinal">
+              <MailWarning className="w-4 h-4 shrink-0" />
+              <span className="flex-1">
+                {verificacaoReenviada
+                  ? "E-mail de verificação reenviado — confira sua caixa de entrada."
+                  : "E-mail ainda não confirmado. Confirme para garantir o recebimento dos alertas."}
+              </span>
+              {!verificacaoReenviada && (
+                <button
+                  type="button"
+                  onClick={reenviarVerificacao}
+                  disabled={reenviando}
+                  className="font-semibold underline disabled:opacity-60"
+                >
+                  {reenviando ? "Enviando..." : "Reenviar e-mail"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -146,6 +222,84 @@ export default function MinhaContaForm({ perfil, onUpdate }: Props) {
         <Save className="w-4 h-4" />
         {salvando ? "Salvando..." : "Salvar dados"}
       </button>
+
+      {/* ── Preferências de notificação ──────────────────────────────────── */}
+      <div className="pt-5 border-t border-borda">
+        <h3 className="font-display text-base font-bold text-texto mb-1 flex items-center gap-2">
+          <Bell className="w-4 h-4 text-nevoa" /> Notificações
+        </h3>
+        <p className="text-xs text-nevoa mb-4">Escolha por onde você quer receber os alertas de multa nova.</p>
+
+        <div className="space-y-3">
+          <label className="flex items-center justify-between rounded-xl border border-borda bg-fundo/60 px-4 py-3 cursor-pointer">
+            <span className="text-sm text-texto">E-mail</span>
+            <input
+              type="checkbox"
+              checked={notificarEmail}
+              onChange={(e) => alternarNotificarEmail(e.target.checked)}
+              disabled={salvandoPreferencia}
+              className="h-4 w-4 rounded border-borda accent-verdeSinal"
+            />
+          </label>
+
+          <div className="flex items-center justify-between rounded-xl border border-borda bg-fundo/30 px-4 py-3 opacity-60">
+            <span className="text-sm text-texto">
+              WhatsApp <span className="text-[10px] text-nevoa">(em breve)</span>
+            </span>
+            <input type="checkbox" checked={false} disabled className="h-4 w-4 rounded border-borda" />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Zona de risco: exclusão de conta ─────────────────────────────── */}
+      <div className="pt-5 border-t border-borda">
+        <h3 className="font-display text-base font-bold text-vermelhoSinal mb-1 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4" /> Excluir conta
+        </h3>
+        <p className="text-xs text-nevoa mb-4">
+          Ao excluir, o monitoramento e as notificações param imediatamente. O histórico de multas e veículos já
+          detectado é preservado como registro, conforme a Política de Privacidade.
+        </p>
+
+        {!mostrarExclusao ? (
+          <button
+            type="button"
+            onClick={() => setMostrarExclusao(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-vermelhoSinal/30 px-4 py-2.5 text-sm font-semibold text-vermelhoSinal hover:bg-vermelhoSinal/[0.06] transition-all"
+          >
+            <Trash2 className="w-4 h-4" /> Excluir minha conta
+          </button>
+        ) : (
+          <div className="space-y-3 rounded-xl border border-vermelhoSinal/25 bg-vermelhoSinal/[0.04] p-4">
+            <label className={labelClasses}>Confirme sua senha para excluir</label>
+            <input
+              type="password"
+              className={campoClasses}
+              value={senhaExclusao}
+              onChange={(e) => setSenhaExclusao(e.target.value)}
+              placeholder="Sua senha atual"
+            />
+            {erroExclusao && <p className="text-xs text-vermelhoSinal">{erroExclusao}</p>}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={excluirConta}
+                disabled={excluindo}
+                className="rounded-xl bg-vermelhoSinal px-4 py-2.5 text-sm font-bold text-white hover:bg-vermelhoSinal/90 disabled:opacity-60 transition-all"
+              >
+                {excluindo ? "Excluindo..." : "Confirmar exclusão"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMostrarExclusao(false); setSenhaExclusao(""); setErroExclusao(""); }}
+                className="rounded-xl px-4 py-2.5 text-sm font-medium text-nevoa hover:text-texto transition-all"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

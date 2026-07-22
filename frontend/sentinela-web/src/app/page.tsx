@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 const confianca = [
-  { icon: Radar, texto: "Dados oficiais SERPRO & DETRAN-RJ" },
+  { icon: Radar, texto: "Dados oficiais SERPRO/RADAR" },
   { icon: Scale, texto: "Conforme a Lei 14.071/2020" },
   { icon: Lock, texto: "Criptografia TLS de ponta a ponta" },
   { icon: Sparkles, texto: "Análise por IA em segundos" },
@@ -62,8 +62,8 @@ const timeline = [
     hora: "10:00",
     titulo: "Verificação automática",
     texto:
-      "O Sentinela consulta SERPRO/RADAR (base nacional) e DETRAN-RJ em paralelo, cruzando as duas fontes. Você não faz nada.",
-    orgaos: ["SERPRO/RADAR", "DETRAN-RJ"],
+      "O Sentinela consulta o SERPRO/RADAR, base nacional de infrações (RENAINF). Você não faz nada.",
+    orgaos: ["SERPRO/RADAR"],
     icon: Search,
   },
   {
@@ -91,9 +91,9 @@ const timeline = [
 const diferenciais = [
   {
     icon: Radar,
-    titulo: "Duas fontes cruzadas",
+    titulo: "Base nacional oficial",
     texto:
-      "SERPRO/RADAR (base nacional) e DETRAN-RJ consultados em paralelo todos os dias. Cada multa mostra qual fonte confirmou — ou as duas.",
+      "SERPRO/RADAR (RENAINF) consultado todos os dias, cobrindo infrações de qualquer estado do Brasil — não só do Rio de Janeiro.",
   },
   {
     icon: Scale,
@@ -157,7 +157,7 @@ const faqs = [
   {
     pergunta: "Funciona em outros estados, além do Rio de Janeiro?",
     resposta:
-      "A base nacional (SERPRO/RADAR) cobre infrações de qualquer estado. Já a segunda fonte, DETRAN-RJ, é específica do Rio de Janeiro — por isso a cobertura mais completa hoje é para veículos emplacados no RJ.",
+      "Sim. A consulta é feita na base nacional (SERPRO/RADAR, via RENAINF), que cobre infrações de qualquer estado do Brasil — não só veículos emplacados no RJ.",
   },
   {
     pergunta: "Preciso instalar um aplicativo?",
@@ -232,7 +232,7 @@ export default function LandingPage() {
           <p className="mt-6 max-w-xl text-lg text-texto/75 leading-relaxed border-l-2 border-borda pl-6">
             Hoje, nenhum órgão te avisa quando uma multa é registrada no seu nome. Você descobre pelo
             boleto — muitas vezes depois que o prazo de defesa já venceu. O Sentinela verifica sua
-            placa todo dia em SERPRO/RADAR e DETRAN-RJ, e no mesmo dia te diz{" "}
+            placa todo dia no SERPRO/RADAR, e no mesmo dia te diz{" "}
             <span className="text-texto font-medium">
               o que aconteceu, quanto tempo você tem e se vale recorrer
             </span>{" "}
@@ -260,7 +260,7 @@ export default function LandingPage() {
           {/* Stats rápidas */}
           <div className="mt-16 grid grid-cols-3 gap-4 sm:gap-6 pt-8 border-t border-borda">
             {[
-              { valor: "2", label: "Fontes oficiais" },
+              { valor: "1", label: "Base oficial nacional" },
               { valor: "10:00", label: "Verificação diária" },
               { valor: "IA", label: "Análise do CTB" },
             ].map((s) => (
@@ -541,12 +541,12 @@ export default function LandingPage() {
           </div>
           <p className="text-xs text-nevoaClara">© 2026 Sentinela · Rio de Janeiro</p>
           <div className="flex gap-8">
-            <a href="#" className="hover:text-texto transition-colors">
+            <Link href="/termos" className="hover:text-texto transition-colors">
               Termos
-            </a>
-            <a href="#" className="hover:text-texto transition-colors">
+            </Link>
+            <Link href="/privacidade" className="hover:text-texto transition-colors">
               Privacidade
-            </a>
+            </Link>
             <Link href="/entrar" className="text-verdeSinal hover:text-texto transition-colors font-medium">
               Entrar
             </Link>

@@ -8,6 +8,9 @@ public interface INotificacaoService
 {
     Task NotificarSemMultasAsync(Usuario usuario, Veiculo veiculo, CancellationToken ct = default);
     Task NotificarMultaEncontradaAsync(Usuario usuario, Veiculo veiculo, Multa multa, AnaliseCtb analise, CancellationToken ct = default);
+    Task EnviarEmailVerificacaoAsync(Usuario usuario, string linkVerificacao, CancellationToken ct = default);
+    Task EnviarEmailRedefinicaoSenhaAsync(Usuario usuario, string linkRedefinicao, CancellationToken ct = default);
+    Task EnviarAlertaOperacionalAsync(string assunto, string corpo, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -81,6 +84,38 @@ public class NotificacaoService : INotificacaoService
 
         if (usuario.NotificarWhatsApp && !string.IsNullOrWhiteSpace(usuario.WhatsAppNumero))
             await EnviarWhatsAppAsync(usuario.WhatsAppNumero!, corpo, ct);
+    }
+
+    public async Task EnviarEmailVerificacaoAsync(Usuario usuario, string linkVerificacao, CancellationToken ct = default)
+    {
+        var assunto = "Sentinela: confirme seu e-mail";
+        var corpo = $"Olá {usuario.Nome}, confirme seu e-mail clicando no link abaixo (válido por 24h):\n\n{linkVerificacao}\n\n" +
+                    "É por este e-mail que você recebe os alertas de multa — por isso confirmamos que ele é realmente seu.";
+        await EnviarEmailAsync(usuario.Email, assunto, corpo, ct);
+    }
+
+    public async Task EnviarEmailRedefinicaoSenhaAsync(Usuario usuario, string linkRedefinicao, CancellationToken ct = default)
+    {
+        var assunto = "Sentinela: redefinição de senha";
+        var corpo = $"Olá {usuario.Nome}, recebemos um pedido para redefinir sua senha. Clique no link abaixo (válido por 1h):\n\n{linkRedefinicao}\n\n" +
+                    "Se você não pediu isso, ignore este e-mail — sua senha continua a mesma.";
+        await EnviarEmailAsync(usuario.Email, assunto, corpo, ct);
+    }
+
+    /// <summary>
+    /// Alerta operacional para o admin (ex.: o job diário falhou) — não é uma
+    /// notificação de usuário, por isso vai direto para Resend:RemetenteSuporte
+    /// ou, na ausência dele, para o próprio remetente padrão.
+    /// </summary>
+    public async Task EnviarAlertaOperacionalAsync(string assunto, string corpo, CancellationToken ct = default)
+    {
+        var destinatario = _config["Resend:EmailAdmin"];
+        if (string.IsNullOrWhiteSpace(destinatario))
+        {
+            _logger.LogWarning("Resend:EmailAdmin não configurado. Alerta operacional só ficou no log: {Assunto}", assunto);
+            return;
+        }
+        await EnviarEmailAsync(destinatario, $"[Sentinela/Alerta] {assunto}", corpo, ct);
     }
 
     private static string SanitizarNomeArquivo(string valor)

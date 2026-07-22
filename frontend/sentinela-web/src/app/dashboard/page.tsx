@@ -467,7 +467,8 @@ export default function DashboardPage() {
   const { data: perfil, mutate: mutatePerfil } = useSWR<PerfilUsuario>(swrKeys.perfil, fetcher);
 
   // Onboarding obrigatório: sem Nome, CPF e Nº de registro da CNH, o
-  // Sentinela não consegue consultar o DETRAN-RJ nem montar o cartão de CNH.
+  // Sentinela não consegue montar o cartão de CNH nem identificar com
+  // segurança o proprietário do veículo monitorado.
   // Aparece no primeiro acesso (perfil recém-criado, campos em branco) e
   // continua aparecendo em qualquer login seguinte até serem preenchidos.
   const precisaOnboarding =

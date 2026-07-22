@@ -31,10 +31,13 @@ services:
       - Anthropic__Model=${ANTHROPIC_MODEL:-claude-sonnet-4-6}
       - Resend__ApiKey=${RESEND_API_KEY:-}
       - Resend__RemetentePadrao=${RESEND_REMETENTE:-Sentinela <alertas@sentinela.app>}
+      - Resend__EmailAdmin=${RESEND_EMAIL_ADMIN:-}
       - ZApi__InstanceId=${ZAPI_INSTANCE_ID:-}
       - ZApi__Token=${ZAPI_TOKEN:-}
     ports:
       - "5000:8080"
+    volumes:
+      - sentinela_logs:/app/logs
     depends_on:
       - postgres
     restart: unless-stopped
@@ -54,3 +57,4 @@ services:
 
 volumes:
   pgdata:
+  sentinela_logs:

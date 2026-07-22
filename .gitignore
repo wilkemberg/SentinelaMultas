@@ -3,6 +3,7 @@ backend/**/bin/
 backend/**/obj/
 backend/**/appsettings.Development.json
 backend/**/.vs/
+backend/**/logs/
 
 # Node / Next.js
 frontend/**/node_modules/

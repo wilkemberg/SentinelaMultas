@@ -157,7 +157,7 @@ export default function AdicionarVeiculoModal({ onClose, onSuccess }: Props) {
               {/* Campo opcional: só é necessário quando o veículo NÃO está no
                   nome do dono da conta (financiado, de terceiro, de empresa).
                   Por padrão o Sentinela usa o CPF já cadastrado no seu perfil
-                  para a consulta ao DETRAN-RJ. */}
+                  para identificar o proprietário do veículo. */}
               {!mostrarCpf ? (
                 <button
                   type="button"
@@ -222,7 +222,7 @@ export default function AdicionarVeiculoModal({ onClose, onSuccess }: Props) {
             <p className="mt-1 text-sm text-verdeSinal font-semibold">{veiculoCriado?.placa}</p>
             <div className="mt-6 p-4 rounded-xl bg-asfalto w-full text-left">
               <p className="text-xs text-nevoa leading-relaxed">
-                Varredura diária programada para 10:00. Bases consultadas: SERPRO/RADAR (nacional) e DETRAN-RJ.
+                Varredura diária programada para 10:00. Base consultada: SERPRO/RADAR (nacional).
                 Você será avisado por WhatsApp/e-mail assim que houver uma nova multa.
               </p>
             </div>

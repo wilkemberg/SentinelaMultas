@@ -38,5 +38,27 @@ public class Usuario
     public DateTime CriadoEm { get; set; } = DateTime.UtcNow;
     public DateTime? UltimoLoginEm { get; set; }
 
+    // Verificação de e-mail: sem isso, qualquer um poderia cadastrar um e-mail
+    // que não é seu — e é justamente esse e-mail que recebe os alertas de
+    // multa. Token de uso único, expira em 24h (ver AuthController).
+    public bool EmailVerificado { get; set; } = false;
+    public string? TokenVerificacaoEmail { get; set; }
+    public DateTime? TokenVerificacaoEmailExpiraEm { get; set; }
+
+    // Recuperação de senha ("esqueci minha senha"). Token de uso único, expira
+    // em 1h (ver AuthController.EsqueciSenha/RedefinirSenha).
+    public string? TokenResetSenha { get; set; }
+    public DateTime? TokenResetSenhaExpiraEm { get; set; }
+
+    // Registro de consentimento LGPD no cadastro (data em que aceitou os
+    // Termos de Uso e a Política de Privacidade vigentes).
+    public DateTime? ConsentimentoLgpdEm { get; set; }
+
+    // Marca a conta como excluída sem apagar o histórico de multas/veículos
+    // (o usuário perde acesso e deixa de ser monitorado/notificado, mas os
+    // registros já gerados — inclusive PDFs de defesa — não somem do banco).
+    public bool ContaExcluida { get; set; } = false;
+    public DateTime? ContaExcluidaEm { get; set; }
+
     public List<Veiculo> Veiculos { get; set; } = new();
 }

@@ -20,7 +20,7 @@ export default function RadarStatus({
   placa,
   status,
   ultimaVerificacao,
-  orgaos = ["SERPRO/RADAR", "DETRAN-RJ"],
+  orgaos = ["SERPRO/RADAR"],
 }: RadarStatusProps) {
   const isOk = status === "sem-multa";
   const isPending = status === "verificando";

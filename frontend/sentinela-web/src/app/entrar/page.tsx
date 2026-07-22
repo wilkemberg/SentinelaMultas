@@ -26,7 +26,7 @@ const InputBase = ({ label, id, type = "text", value, onChange, placeholder }: a
 export default function EntrarPage() {
   const router = useRouter();
   const [modo, setModo] = useState<"login" | "registro">("login");
-  const [form, setForm] = useState({ nome: "", email: "", senha: "", whatsapp: "" });
+  const [form, setForm] = useState({ nome: "", email: "", senha: "", whatsapp: "", aceitouTermos: false });
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -41,11 +41,17 @@ export default function EntrarPage() {
       return;
     }
 
+    if (modo === "registro" && !form.aceitouTermos) {
+      setErro("É necessário aceitar os Termos de Uso e a Política de Privacidade para criar a conta.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const resp =
         modo === "login"
           ? await apiAuth.entrar(form.email, form.senha)
-          : await apiAuth.registrar(form.nome, form.email, form.senha, form.whatsapp.replace(/\D/g, ""));
+          : await apiAuth.registrar(form.nome, form.email, form.senha, form.whatsapp.replace(/\D/g, ""), form.aceitouTermos);
 
       auth.salvarSessao(resp);
       router.push("/dashboard");
@@ -128,6 +134,37 @@ export default function EntrarPage() {
               onChange={(e: any) => setForm({ ...form, senha: e.target.value })}
               placeholder={modo === "registro" ? "Mínimo 8 caracteres" : "••••••••"}
             />
+
+            {modo === "login" && (
+              <div className="text-right -mt-2">
+                <Link href="/esqueci-senha" className="text-xs text-nevoa hover:text-verdeSinal transition-colors">
+                  Esqueci minha senha
+                </Link>
+              </div>
+            )}
+
+            {modo === "registro" && (
+              <label htmlFor="aceitouTermos" className="flex items-start gap-2.5 text-xs text-nevoa leading-relaxed">
+                <input
+                  id="aceitouTermos"
+                  type="checkbox"
+                  checked={form.aceitouTermos}
+                  onChange={(e) => setForm({ ...form, aceitouTermos: e.target.checked })}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-borda accent-verdeSinal"
+                />
+                <span>
+                  Li e aceito os{" "}
+                  <Link href="/termos" target="_blank" className="text-texto font-medium hover:text-verdeSinal transition-colors">
+                    Termos de Uso
+                  </Link>{" "}
+                  e a{" "}
+                  <Link href="/privacidade" target="_blank" className="text-texto font-medium hover:text-verdeSinal transition-colors">
+                    Política de Privacidade
+                  </Link>
+                  .
+                </span>
+              </label>
+            )}
 
             {erro && (
               <div className="animate-fade-in flex items-start gap-3 rounded-xl border border-vermelhoSinal/25 bg-vermelhoSinal/[0.06] px-4 py-3 text-sm text-vermelhoSinal">

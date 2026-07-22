@@ -16,6 +16,7 @@ public interface IJwtService
     string GerarToken(Usuario usuario);
     string HashSenha(string senha);
     bool VerificarSenha(string senha, string hash);
+    string GerarTokenAleatorio();
 }
 
 public class JwtService : IJwtService
@@ -67,6 +68,18 @@ public class JwtService : IJwtService
         var hashEsperado = Convert.FromBase64String(partes[1]);
         var hashInformado = Rfc2898DeriveBytes.Pbkdf2(senha, salt, 100_000, HashAlgorithmName.SHA256, 32);
         return CryptographicOperations.FixedTimeEquals(hashEsperado, hashInformado);
+    }
+
+    // Token de uso único para links de e-mail (verificação de cadastro,
+    // redefinição de senha). Base64Url (sem +, / ou =) para ir limpo numa
+    // query string sem precisar de encode adicional.
+    public string GerarTokenAleatorio()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
     }
 }
 

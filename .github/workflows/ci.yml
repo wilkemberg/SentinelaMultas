@@ -20,14 +20,18 @@ jobs:
     - name: Restore dependencies
       working-directory: ./backend/Sentinela.Api
       run: dotnet restore
-      
+
     - name: Build
       working-directory: ./backend/Sentinela.Api
       run: dotnet build --no-restore -c Release
-      
+
+    - name: Restore test project
+      working-directory: ./backend/Sentinela.Api.Tests
+      run: dotnet restore
+
     - name: Test
-      working-directory: ./backend/Sentinela.Api
-      run: dotnet test --no-build --verbosity normal
+      working-directory: ./backend/Sentinela.Api.Tests
+      run: dotnet test --verbosity normal
 
   build-frontend:
     runs-on: ubuntu-latest

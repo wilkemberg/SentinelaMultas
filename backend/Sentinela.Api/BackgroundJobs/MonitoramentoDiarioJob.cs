@@ -7,8 +7,7 @@ namespace Sentinela.Api.BackgroundJobs;
 
 /// <summary>
 /// Roda 1x/dia às 10:00. Para cada veículo com monitoramento ativo:
-/// - Consulta SERPRO/RADAR (base nacional RENAINF) e DETRAN-RJ/Nada-Consta em
-///   sequência, mesclando os resultados (MultasMerge)
+/// - Consulta SERPRO/RADAR (base nacional RENAINF) — fonte única de multas
 /// - Cria registros de Multa para o que for novo
 /// - Manda para análise completa da IA (CTB + defesa)
 /// - Dispara notificação por e-mail e/ou WhatsApp
@@ -39,7 +38,43 @@ public class MonitoramentoDiarioJob : BackgroundService
 
             if (stoppingToken.IsCancellationRequested) break;
 
-            await RodarVerificacaoAsync(stoppingToken);
+            // Falha por veículo já é tratada dentro de RodarVerificacaoAsync (um
+            // veículo com erro não derruba os demais). Este try/catch cobre uma
+            // falha catastrófica do ciclo inteiro (ex.: banco de dados fora do
+            // ar) — sem isso, o BackgroundService simplesmente encerrava a task
+            // silenciosamente e o monitoramento parava até o container reiniciar,
+            // sem log nem aviso nenhum.
+            try
+            {
+                await RodarVerificacaoAsync(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogCritical(ex, "Falha catastrófica na verificação diária — o ciclo de hoje não foi concluído.");
+                await AlertarFalhaCriticaAsync(ex, stoppingToken);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Best-effort: avisa o admin (Resend:EmailAdmin) que o ciclo diário falhou
+    /// por completo. Nunca deixa uma falha aqui derrubar o loop principal —
+    /// o pior cenário é só não ter recebido o alerta, e o erro já está no log.
+    /// </summary>
+    private async Task AlertarFalhaCriticaAsync(Exception ex, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = _services.CreateScope();
+            var notificacaoService = scope.ServiceProvider.GetRequiredService<INotificacaoService>();
+            await notificacaoService.EnviarAlertaOperacionalAsync(
+                "Verificação diária falhou",
+                $"O ciclo de verificação diária de multas falhou por completo às {DateTime.Now:dd/MM/yyyy HH:mm}.\n\nErro: {ex.Message}",
+                ct);
+        }
+        catch (Exception alertaEx)
+        {
+            _logger.LogError(alertaEx, "Falha ao enviar alerta operacional de falha do job diário.");
         }
     }
 
@@ -48,7 +83,6 @@ public class MonitoramentoDiarioJob : BackgroundService
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SentinelaDbContext>();
         var consultaService = scope.ServiceProvider.GetRequiredService<IConsultaMultasService>();
-        var consultaDetranRjService = scope.ServiceProvider.GetRequiredService<IConsultaMultasDetranRjService>();
         var analiseService = scope.ServiceProvider.GetRequiredService<ICtbAnaliseService>();
         var notificacaoService = scope.ServiceProvider.GetRequiredService<INotificacaoService>();
 
@@ -67,31 +101,16 @@ public class MonitoramentoDiarioJob : BackgroundService
 
             try
             {
-                // Consulta a fonte principal (SERPRO/RADAR — base nacional RENAINF)
+                // Consulta a fonte única (SERPRO/RADAR — base nacional RENAINF)
                 var resultado = await consultaService.ConsultarAsync(veiculo.Placa, veiculo.Renavam, veiculo.Uf, ct);
                 if (!resultado.Sucesso)
-                    _logger.LogWarning("SERPRO/RADAR falhou para {Placa}, tentando seguir só com DETRAN-RJ: {Erro}", veiculo.Placa, resultado.MensagemErro);
-
-                // Segunda fonte (DETRAN-RJ) — pega multas que ainda não chegaram ao
-                // RENAINF por estarem em trâmite interno no órgão autuador. Roda
-                // mesmo que o SERPRO/RADAR tenha falhado acima: parar ali teria
-                // travado o veículo antes de tentar a fonte que, no caso real que
-                // motivou essa segunda consulta, era a única com a multa.
-                var cpfParaDetranRj = veiculo.CpfProprietario ?? veiculo.Usuario.Cpf ?? "";
-                var resultadoDetranRj = await consultaDetranRjService.ConsultarAsync(cpfParaDetranRj, veiculo.Renavam, ct);
-                if (!resultadoDetranRj.Sucesso)
-                    _logger.LogWarning("DETRAN-RJ Nada Consta falhou para {Placa}, seguindo só com SERPRO/RADAR: {Erro}", veiculo.Placa, resultadoDetranRj.MensagemErro);
-
-                // Só desiste do veículo se AS DUAS fontes falharam nesse ciclo.
-                if (!resultado.Sucesso && !resultadoDetranRj.Sucesso)
                 {
-                    _logger.LogError("Falha ao consultar as duas fontes para {Placa}. SERPRO/RADAR: {ErroSerpro} | DETRAN-RJ: {ErroDetran}",
-                        veiculo.Placa, resultado.MensagemErro, resultadoDetranRj.MensagemErro);
+                    _logger.LogError("Falha ao consultar SERPRO/RADAR para {Placa}: {Erro}", veiculo.Placa, resultado.MensagemErro);
                     continue;
                 }
 
                 var multasPorNumero = veiculo.Multas.ToDictionary(m => m.NumeroAutoInfracao);
-                var encontradasDeduplicadas = MultasMerge.Combinar(resultado.Multas, resultadoDetranRj.Multas);
+                var encontradasDeduplicadas = MultasMerge.Combinar(resultado.Multas);
 
                 var novas = encontradasDeduplicadas
                     .Where(m => !multasPorNumero.ContainsKey(m.NumeroAutoInfracao))

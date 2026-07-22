@@ -20,6 +20,7 @@ public record AtualizarPerfilRequest(
     string? NomeMae);
 
 public record ValidarCnhRequest(string CodigoSeguranca);
+public record ExcluirContaRequest(string Senha);
 
 [ApiController]
 [Route("api/usuarios")]
@@ -28,12 +29,14 @@ public class UsuariosController : ControllerBase
 {
     private readonly SentinelaDbContext _db;
     private readonly ICnhValidacaoService _cnhValidacaoService;
+    private readonly IJwtService _jwt;
     private readonly ILogger<UsuariosController> _logger;
 
-    public UsuariosController(SentinelaDbContext db, ICnhValidacaoService cnhValidacaoService, ILogger<UsuariosController> logger)
+    public UsuariosController(SentinelaDbContext db, ICnhValidacaoService cnhValidacaoService, IJwtService jwt, ILogger<UsuariosController> logger)
     {
         _db = db;
         _cnhValidacaoService = cnhValidacaoService;
+        _jwt = jwt;
         _logger = logger;
     }
 
@@ -61,6 +64,7 @@ public class UsuariosController : ControllerBase
             usuario.Nome,
             usuario.Email,
             usuario.WhatsAppNumero,
+            usuario.EmailVerificado,
             usuario.NotificarEmail,
             usuario.NotificarWhatsApp,
             usuario.AtividadeRemunerada,
@@ -216,5 +220,37 @@ public class UsuariosController : ControllerBase
         var resultado = PontuacaoCnhCalculator.Calcular(todasAsMultas, usuario.AtividadeRemunerada);
 
         return Ok(resultado);
+    }
+
+    /// <summary>
+    /// Exclusão de conta (LGPD, direito de eliminação). Confirma a senha atual
+    /// antes de prosseguir. Soft delete: marca a conta como excluída e desliga
+    /// o monitoramento de todos os veículos (para de consultar e notificar
+    /// imediatamente), mas preserva o histórico de multas/veículos já gerado —
+    /// inclusive os PDFs de defesa, que continuam válidos como registro. Se o
+    /// usuário pedir remoção completa dos dados no futuro, isso vira uma
+    /// segunda etapa manual (aqui só cobrimos "parar de usar o serviço").
+    /// </summary>
+    [HttpDelete("me")]
+    public async Task<IActionResult> ExcluirConta([FromBody] ExcluirContaRequest req)
+    {
+        var usuarioId = User.GetUsuarioId();
+        var usuario = await _db.Usuarios.Include(u => u.Veiculos).FirstOrDefaultAsync(u => u.Id == usuarioId);
+        if (usuario is null) return NotFound();
+
+        if (!_jwt.VerificarSenha(req.Senha, usuario.SenhaHash))
+            return BadRequest(new { mensagem = "Senha incorreta." });
+
+        usuario.ContaExcluida = true;
+        usuario.ContaExcluidaEm = DateTime.UtcNow;
+        usuario.NotificarEmail = false;
+        usuario.NotificarWhatsApp = false;
+        foreach (var veiculo in usuario.Veiculos)
+            veiculo.MonitoramentoAtivo = false;
+
+        await _db.SaveChangesAsync();
+        _logger.LogInformation("Conta excluída (soft delete): {Email}", usuario.Email);
+
+        return Ok(new { mensagem = "Conta excluída. Você não será mais monitorado nem notificado." });
     }
 }

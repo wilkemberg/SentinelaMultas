@@ -17,6 +17,11 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.3.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="QuestPDF" Version="2026.7.1" />
+    <!-- Logging estruturado: console (formato legível em dev) + arquivo rolante
+         diário (retém 14 dias) para conseguir investigar falhas do job diário
+         sem depender só do log efêmero do container. -->
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
   </ItemGroup>
 
 </Project>

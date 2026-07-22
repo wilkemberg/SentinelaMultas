@@ -1,11 +1,14 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Sentinela.Api.BackgroundJobs;
 using Sentinela.Api.Data;
 using Sentinela.Api.Services;
+using Serilog;
 
 // Licença Community do QuestPDF (gerador de PDF das multas anexadas por
 // e-mail) — gratuita para indivíduos/empresas com faturamento anual abaixo de
@@ -13,6 +16,20 @@ using Sentinela.Api.Services;
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// --- Logging estruturado (Serilog) ---
+// Console (legível em dev, JSON-friendly em produção via docker logs) +
+// arquivo rolante diário em /app/logs, retendo 14 dias — sem isso, a única
+// forma de investigar uma falha do job diário era torcer para o log do
+// container ainda existir.
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File(
+        Path.Combine(AppContext.BaseDirectory, "logs", "sentinela-.log"),
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14));
 
 // --- Banco de dados ---
 builder.Services.AddDbContext<SentinelaDbContext>(options =>
@@ -41,6 +58,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// --- Rate limiting nos endpoints de autenticação ---
+// Mitiga força bruta em login/registro/esqueci-senha: no máximo 10 tentativas
+// por IP a cada janela de 1 minuto, sem fila (quem estourar o limite recebe
+// 429 imediatamente em vez de esperar). Aplicado via [EnableRateLimiting("auth")]
+// no AuthController — os demais endpoints da API não são afetados.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("auth", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 10;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.QueueLimit = 0;
+    });
+});
+
 // --- Serviços de domínio ---
 // Timeout maior que o padrão (100s): a consulta ao SERPRO/RADAR é uma raspagem
 // em tempo real de um site do governo (não uma API instantânea) e a própria
@@ -48,10 +81,10 @@ builder.Services.AddAuthorization();
 // isso, o HttpClient cancelava a chamada antes da Infosimples terminar,
 // fazendo a consulta "sumir" sem erro nem resultado.
 builder.Services.AddHttpClient<IConsultaMultasService, SerproRadarConsultaService>(c => c.Timeout = TimeSpan.FromSeconds(320));
-// Segunda fonte de multas (DETRAN-RJ/Nada-Consta) — complementa o SERPRO/RADAR
-// fechando o intervalo entre a infração acontecer e ela chegar à base nacional
-// RENAINF (ver comentário em DetranRjNadaConstaService.cs).
-builder.Services.AddHttpClient<IConsultaMultasDetranRjService, DetranRjNadaConstaService>(c => c.Timeout = TimeSpan.FromSeconds(320));
+// Fonte única de consulta hoje: SERPRO/RADAR (base nacional RENAINF). A
+// segunda fonte (DETRAN-RJ/Nada-Consta) foi desativada a pedido — o serviço
+// (DetranRjNadaConstaService.cs) continua no código, só não está registrado
+// no DI, caso seja necessário reativar no futuro.
 builder.Services.AddHttpClient<ICtbAnaliseService, AnthropicCtbAnaliseService>();
 builder.Services.AddHttpClient<INotificacaoService, NotificacaoService>();
 // Mesmo motivo do SERPRO/RADAR acima: a validação de CNH também é uma
@@ -142,6 +175,7 @@ app.UseSwaggerUI(options =>
 
 app.UseCors();
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

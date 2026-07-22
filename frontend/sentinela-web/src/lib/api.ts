@@ -11,6 +11,7 @@ export interface AuthResponse {
   usuarioId: string;
   nome: string;
   email: string;
+  emailVerificado: boolean;
 }
 
 export interface CnhValidadeInfo {
@@ -25,6 +26,7 @@ export interface PerfilUsuario {
   nome: string;
   email: string;
   whatsAppNumero: string | null;
+  emailVerificado: boolean;
   notificarEmail: boolean;
   notificarWhatsApp: boolean;
   atividadeRemunerada: boolean;
@@ -195,10 +197,16 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 // ─── Endpoints de Auth ────────────────────────────────────────────────────────
 
 export const apiAuth = {
-  async registrar(nome: string, email: string, senha: string, whatsAppNumero: string): Promise<AuthResponse> {
+  async registrar(
+    nome: string,
+    email: string,
+    senha: string,
+    whatsAppNumero: string,
+    aceitouTermos: boolean
+  ): Promise<AuthResponse> {
     return apiFetch("/api/auth/registrar", {
       method: "POST",
-      body: JSON.stringify({ nome, email, senha, whatsAppNumero }),
+      body: JSON.stringify({ nome, email, senha, whatsAppNumero, aceitouTermos }),
     });
   },
   async entrar(email: string, senha: string): Promise<AuthResponse> {
@@ -206,6 +214,26 @@ export const apiAuth = {
       method: "POST",
       body: JSON.stringify({ email, senha }),
     });
+  },
+  async esqueciSenha(email: string): Promise<{ mensagem: string }> {
+    return apiFetch("/api/auth/esqueci-senha", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  },
+  async redefinirSenha(token: string, novaSenha: string): Promise<{ mensagem: string }> {
+    return apiFetch("/api/auth/redefinir-senha", {
+      method: "POST",
+      body: JSON.stringify({ token, novaSenha }),
+    });
+  },
+  async verificarEmail(token: string): Promise<{ mensagem: string }> {
+    return apiFetch(`/api/auth/verificar-email?token=${encodeURIComponent(token)}`, {
+      method: "POST",
+    });
+  },
+  async reenviarVerificacao(): Promise<{ mensagem: string }> {
+    return apiFetch("/api/auth/reenviar-verificacao", { method: "POST" });
   },
 };
 
@@ -237,6 +265,12 @@ export const apiUsuarios = {
     return apiFetch("/api/usuarios/validar-cnh", {
       method: "POST",
       body: JSON.stringify({ codigoSeguranca }),
+    });
+  },
+  async excluirConta(senha: string): Promise<{ mensagem: string }> {
+    return apiFetch("/api/usuarios/me", {
+      method: "DELETE",
+      body: JSON.stringify({ senha }),
     });
   },
 };

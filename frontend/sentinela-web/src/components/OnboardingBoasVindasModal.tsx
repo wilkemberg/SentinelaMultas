@@ -26,8 +26,8 @@ const formatarPlaca = (v: string) => v.replace(/[^a-zA-Z0-9]/g, "").toUpperCase(
  * CPF ou Nº de registro da CNH estiverem em branco no perfil):
  *
  * 1) Dados da conta (Nome/CPF/Registro CNH) — obrigatório, sem como pular.
- *    Sem esses dados o Sentinela não consegue consultar o DETRAN-RJ (exige
- *    CPF+RENAVAM) nem montar o cartão de CNH.
+ *    Sem esses dados o Sentinela não consegue montar o cartão de CNH nem
+ *    identificar o proprietário do veículo monitorado.
  * 2) Primeiro veículo (placa/RENAVAM/tipo/CPF opcional) — aqui SIM existe um
  *    "Configurar depois", porque cadastrar veículo é uma ação com mais
  *    fricção (placa na mão) e não deve travar quem só quer entrar no painel.
@@ -153,7 +153,7 @@ export default function OnboardingBoasVindasModal({ perfil, onConcluido }: Props
               </h2>
             </div>
             <p className="text-sm text-nevoa mb-6 leading-relaxed">
-              Para monitorar seus veículos de forma efetiva — consultando SERPRO/RADAR e DETRAN-RJ
+              Para monitorar seus veículos de forma efetiva — consultando o SERPRO/RADAR
               e te avisando de novas multas — precisamos de três dados seus.
             </p>
 

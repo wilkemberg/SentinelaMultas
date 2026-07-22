@@ -16,7 +16,6 @@ public class VeiculosController : ControllerBase
 {
     private readonly SentinelaDbContext _db;
     private readonly IConsultaMultasService _consultaService;
-    private readonly IConsultaMultasDetranRjService _consultaDetranRjService;
     private readonly ICtbAnaliseService _analiseService;
     private readonly INotificacaoService _notificacaoService;
     private readonly ILogger<VeiculosController> _logger;
@@ -24,14 +23,12 @@ public class VeiculosController : ControllerBase
     public VeiculosController(
         SentinelaDbContext db,
         IConsultaMultasService consultaService,
-        IConsultaMultasDetranRjService consultaDetranRjService,
         ICtbAnaliseService analiseService,
         INotificacaoService notificacaoService,
         ILogger<VeiculosController> logger)
     {
         _db = db;
         _consultaService = consultaService;
-        _consultaDetranRjService = consultaDetranRjService;
         _analiseService = analiseService;
         _notificacaoService = notificacaoService;
         _logger = logger;
@@ -165,28 +162,10 @@ public class VeiculosController : ControllerBase
         {
             var resultado = await _consultaService.ConsultarAsync(veiculo.Placa, veiculo.Renavam, veiculo.Uf);
             if (!resultado.Sucesso)
-                _logger.LogWarning("SERPRO/RADAR falhou para {Placa}, tentando seguir só com DETRAN-RJ: {Erro}", veiculo.Placa, resultado.MensagemErro);
-
-            // Segunda fonte (DETRAN-RJ) — complementa o SERPRO/RADAR, que só reflete
-            // o RENAINF (base nacional) depois que o órgão autuador conclui seu
-            // próprio trâmite interno. IMPORTANTE: essa consulta roda mesmo que o
-            // SERPRO/RADAR tenha falhado acima — é justamente o cenário real que
-            // motivou essa segunda fonte existir (multa já visível no DETRAN-RJ,
-            // mas o SERPRO/RADAR não retorna nada para aquela placa/renavam).
-            // Abortar aqui em cima teria travado a verificação antes de sequer
-            // tentar a fonte que, na prática, era a única com a multa.
-            var cpfParaDetranRj = veiculo.CpfProprietario ?? veiculo.Usuario.Cpf ?? "";
-            var resultadoDetranRj = await _consultaDetranRjService.ConsultarAsync(cpfParaDetranRj, veiculo.Renavam);
-            if (!resultadoDetranRj.Sucesso)
-                _logger.LogWarning("DETRAN-RJ Nada Consta falhou para {Placa}, seguindo só com SERPRO/RADAR: {Erro}", veiculo.Placa, resultadoDetranRj.MensagemErro);
-
-            // Só falha de verdade se AS DUAS fontes falharam — se pelo menos uma
-            // respondeu (mesmo que com zero multas), a verificação é válida.
-            if (!resultado.Sucesso && !resultadoDetranRj.Sucesso)
-                return StatusCode(502, new { mensagem = $"Falha ao consultar as duas fontes de multas. SERPRO/RADAR: {resultado.MensagemErro} | DETRAN-RJ: {resultadoDetranRj.MensagemErro}" });
+                return StatusCode(502, new { mensagem = $"Falha ao consultar SERPRO/RADAR: {resultado.MensagemErro}" });
 
             var multasPorNumero = veiculo.Multas.ToDictionary(m => m.NumeroAutoInfracao);
-            var encontradasDeduplicadas = MultasMerge.Combinar(resultado.Multas, resultadoDetranRj.Multas);
+            var encontradasDeduplicadas = MultasMerge.Combinar(resultado.Multas);
 
             var novas = encontradasDeduplicadas
                 .Where(m => !multasPorNumero.ContainsKey(m.NumeroAutoInfracao))
